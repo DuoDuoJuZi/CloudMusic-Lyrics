@@ -1,7 +1,11 @@
 # 2022-10-15 by jd3096 vx:jd3096
 # 2024-12-26 rewrite by 五月
+# 2025-02-13 basically a complete rewrite by DuoDuoJuZi
 
-# 2025-2-13 basically a complete rewrite by DuoDuoJuZi
+"""
+    网易云获取歌词，需手动获取基址与四级偏移
+"""
+
 import pymem
 import time
 import win32process
@@ -109,20 +113,40 @@ def main():
         last_lyric = ""
         while True:
             try:
-                # 读取 unicode 字符串
-                raw_bytes = pm.read_bytes(final_addr, 200)
-                lyric = raw_bytes.split(b'\x00\x00')[0]
+                # 获取歌词
+                raw_bytes = pm.read_bytes(final_addr, 256)
 
-                # 保证偶数长度以兼容 UTF-16
+                # 精确查找UTF-16终止符(0x0000)
+                terminator_pos = raw_bytes.find(b'\x00\x00')
+                if terminator_pos != -1:
+                    # 包含终止符的情况下，截取到终止符位置
+                    lyric = raw_bytes[:terminator_pos]
+                else:
+                    # 没有终止符时取全部内容（最多256字节）
+                    lyric = raw_bytes
+
+                # 移除可能存在的单个结尾null（奇数长度修正）
                 if len(lyric) % 2 != 0:
-                    lyric += b'\x00'
+                    lyric = lyric[:-1]
 
-                decoded = lyric.decode('utf-16-le').strip()
-                if decoded != last_lyric:
-                    print("当前歌词:", decoded)
-                    last_lyric = decoded
+                # 解码时保留所有空格
+                try:
+                    decoded = lyric.decode('utf-16-le').strip()
+                except UnicodeDecodeError:
+                    # 遇到非法字符时使用替代策略
+                    decoded = lyric.decode('utf-16-le', errors='replace').strip()
 
-                time.sleep(0.5)
+                # 显示处理（保留原始空格）
+                display_str = decoded.replace('\u3000', ' ')  # 替换全角空格
+                display_str = ' '.join(display_str.split())  # 合并连续空格但不删除单个空格
+
+                if display_str != last_lyric:
+                    # 清空行 + 显示歌词（最大显示80字符）
+                    display = display_str[:80] + ('..' if len(display_str) > 80 else '')
+                    print(f"\r\x1b[K🎵 {display}", end='', flush=True)
+                    last_lyric = display_str
+
+                time.sleep(0.01)
 
             except KeyboardInterrupt:
                 print("\n终止进程")
